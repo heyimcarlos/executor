@@ -17,19 +17,24 @@ export { McpExecutionOwnerDirectoryDO, McpSessionDO } from "./mcp";
 // authenticated session props into the hibernatable Durable Object bridge.
 // ---------------------------------------------------------------------------
 
-let handlerPromise: Promise<{
+type Handler = {
   readonly app: (request: Request) => Promise<Response>;
   readonly mcp: (request: Request, env: CloudflareEnv, ctx: ExecutionContext) => Promise<Response>;
-}> | null = null;
+};
 
-const resolveHandler = (env: CloudflareEnv) => {
-  if (!handlerPromise) {
-    handlerPromise = makeCloudflareApp(env).then(({ toWebHandler, mcpAgentHandler }) => ({
-      app: toWebHandler().handler,
-      mcp: mcpAgentHandler,
-    }));
-  }
-  return handlerPromise;
+// Cache the built handler, never the in-flight build. The build does D1/R2 I/O,
+// and Workers ties I/O to the request that started it: if that request is
+// canceled (a reload or closed tab during a cold start), a shared promise never
+// settles and every later request in the isolate hangs. A failed build is not
+// cached either. Concurrent cold-start requests each build; the D1 bring-up is
+// idempotent, as it already must be across isolates.
+let handler: Handler | null = null;
+
+const resolveHandler = async (env: CloudflareEnv): Promise<Handler> => {
+  if (handler) return handler;
+  const { toWebHandler, mcpAgentHandler } = await makeCloudflareApp(env);
+  handler ??= { app: toWebHandler().handler, mcp: mcpAgentHandler };
+  return handler;
 };
 
 const accessConfigErrorResponse = (missingVars: readonly string[]): Response =>
