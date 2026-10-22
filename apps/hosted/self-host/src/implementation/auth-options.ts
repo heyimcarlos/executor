@@ -24,6 +24,8 @@ const Sso = Schema.Struct({
   clientId: Schema.NonEmptyString,
   clientSecret: Schema.Redacted(Schema.NonEmptyString),
   allowedDomains: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1)),
+  assumeEmailVerified: Schema.Boolean,
+  linkPasswordAccounts: Schema.Boolean,
 });
 
 /** SSO stays disabled unless explicitly configured; partial configuration fails startup. */
@@ -41,6 +43,12 @@ export const selfHostAuthSettings = Effect.gen(function* () {
     clientId: Config.String("SSO_CLIENT_ID"),
     clientSecret: Config.Redacted("SSO_CLIENT_SECRET"),
     domains: Config.String("SSO_ALLOWED_DOMAINS"),
+    assumeEmailVerified: Config.Boolean("SSO_ASSUME_EMAIL_VERIFIED").pipe(
+      Config.withDefault(false),
+    ),
+    linkPasswordAccounts: Config.Boolean("SSO_LINK_PASSWORD_ACCOUNTS").pipe(
+      Config.withDefault(false),
+    ),
   });
   const sso = yield* Schema.decodeUnknownEffect(Sso)({
     ...configured,
@@ -122,6 +130,11 @@ export const selfHostAuthOptions = (
   const base = authOptions(settings, ipAddressHeaders);
   return {
     ...base,
+    // Password accounts here are never email-verified, so Better Auth refuses to link SSO to
+    // them. Setup and invitations fix each account's email, so an operator may allow it.
+    ...(settings.sso?.linkPasswordAccounts
+      ? { account: { ...base.account, accountLinking: { requireLocalEmailVerified: false } } }
+      : {}),
     emailAndPassword: { enabled: true, disableSignUp: true },
     plugins: [
       organization({ disableOrganizationDeletion: true, allowUserToCreateOrganization: false }),
@@ -141,6 +154,15 @@ export const selfHostAuthOptions = (
                   clientSecret: Redacted.value(settings.sso.clientSecret),
                   requireIdTokenVerification: true,
                   scopes: ["openid", "email", "profile"],
+                  // Some providers (Cloudflare Access) verify every email but omit the
+                  // optional email_verified claim. An explicit false is still respected.
+                  ...(settings.sso.assumeEmailVerified
+                    ? {
+                        mapProfileToUser: (profile) => ({
+                          emailVerified: profile.email_verified !== false,
+                        }),
+                      }
+                    : {}),
                 },
               ],
       }),

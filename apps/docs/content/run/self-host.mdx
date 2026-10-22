@@ -41,6 +41,8 @@ These settings override the defaults:
 | `SSO_DISCOVERY_URL`                  | no       | OIDC discovery document. Leave it empty to keep SSO off.                 |
 | `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` | no       | Credentials for that identity provider.                                  |
 | `SSO_ALLOWED_DOMAINS`                | no       | Comma-separated email domains allowed to join through SSO.               |
+| `SSO_ASSUME_EMAIL_VERIFIED`          | no       | Set to `true` when the provider verifies every email but omits the `email_verified` claim, as Cloudflare Access does. An explicit `false` claim is still rejected. The default is `false`. |
+| `SSO_LINK_PASSWORD_ACCOUNTS`         | no       | Set to `true` to let a user who already has a password account sign in with SSO for the same email. The SSO email must still be verified. Password accounts are never email-verified, so by default SSO refuses them. The default is `false`. |
 
 App code runs in an isolate whose `fetch` reaches only public addresses, the same
 as Executor Cloud. Requests to your own `BETTER_AUTH_URL` origin go straight to
